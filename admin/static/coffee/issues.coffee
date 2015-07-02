@@ -6,6 +6,7 @@ patch = require('virtual-dom/patch')
 createElement = require('virtual-dom/create-element')
 
 util = require('./util.coffee')
+ui_modals = require('./ui_components/modals.coffee')
 
 
 class IssuesBanner extends Backbone.View
@@ -21,6 +22,7 @@ class IssuesBanner extends Backbone.View
 
         @listenTo @model, 'change', @render
         @listenTo @collection, 'change', @render
+        @rename_modal = null
 
         @setElement(createElement(@current_vdom_tree))
 
@@ -35,13 +37,21 @@ class IssuesBanner extends Backbone.View
             @$('.all-issues').slideDown 300, "swing", @render
 
     render: =>
-        new_tree = render_issues(@collection.toJSON(), @show_resolve)
+        new_tree = render_issues(@, @collection.toJSON(), @show_resolve)
         patches = diff(@current_vdom_tree, new_tree)
         patch(@$el.get(0), patches)
         @current_vdom_tree = new_tree
         if @collection.length == 0
             @show_resolve = true
         @
+
+rename_modal = (dataset) =>
+    modal = new ui_modals.RenameItemModal
+        item_type: dataset.itemType
+        model: new Backbone.Model
+            id: dataset.id
+            name: dataset.name
+    modal.render()
 
 render_unknown_issue = (issue) ->
     title: "Unknown issue"
@@ -103,7 +113,7 @@ render_table_availability = (issue) ->
         ] if info.missing_servers.length == 0
     ]
 
-render_name_collision = (collision_type, issue) ->
+render_name_collision = (collision_type, issue, thisArg) ->
     title: "#{util.capitalize(collision_type)} name conflict"
     subtitle: "#{issue.info.name} is the name of more than one #{collision_type}"
     details: [
@@ -113,10 +123,27 @@ render_name_collision = (collision_type, issue) ->
         ]
         h "ul", issue.info.ids.map((id) ->
             plural_type = util.pluralize_noun(collision_type, 2)
-            h "li",
-                h "a", href: "#{plural_type}/#{id}",
-                    h "span.uuid", util.humanize_uuid(id)
-                "(", h("a#rename_#{id}.rename", "Rename"), ")"
+            if collision_type != 'database'
+                link = h("a.change-route", href: "##{plural_type}/#{id}",
+                    h("span.uuid", util.humanize_uuid(id)))
+            else
+                link = h("span.uuid", util.humanize_uuid(id))
+            h "li", [
+                link
+                " ("
+                h("a.rename",
+                    href: "#",
+                    onclick: (event) =>
+                        event.preventDefault()
+                        rename_modal(event.target.dataset)
+                    dataset: {
+                        itemType: collision_type,
+                        id: id,
+                        name: issue.info.name,
+                    },
+                    "Rename")
+                ")"
+            ]
         )
     ]
 
@@ -184,9 +211,9 @@ render_issue = (issue) ->
         when 'log_write_error' then render_log_write_error(issue)
         when 'outdated_index' then render_outdated_index(issue)
         when 'table_availability' then render_table_availability(issue)
-        when 'db_name_collision' then render_name_collision('database', issue)
-        when 'server_name_collision' then render_name_collision('server', issue)
-        when 'table_name_collision' then render_name_collision('table', issue)
+        when 'db_name_collision' then render_name_collision('database', issue, @)
+        when 'server_name_collision' then render_name_collision('server', issue, @)
+        when 'table_name_collision' then render_name_collision('table', issue, @)
         else render_unknown_issue(issue)
     critical_class = if issue.critical then ".critical" else ""
     h "div.issue-container",
@@ -200,7 +227,7 @@ render_issue = (issue) ->
         ]
 
 
-render_issues = (issues, show_resolve) ->
+render_issues = (context, issues, show_resolve) ->
     # Renders the outer container of the issues banner
     no_issues_class = if issues.length > 0 then "" else ".no-issues"
     h "div.issues-banner", ([
@@ -213,7 +240,7 @@ render_issues = (issues, show_resolve) ->
         h "div#resolve-issues.all-issues",
             h "div.container", [
                 h "div#issue-alerts"
-                h("div.issues_list", issues.map(render_issue))
+                h("div.issues_list", issues.map(render_issue, context))
             ]
     ] if issues.length > 0)
 
