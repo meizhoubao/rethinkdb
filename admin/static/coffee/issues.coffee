@@ -110,7 +110,11 @@ render_table_availability = (issue) ->
             h "br"
             "No operations can be performed on this table until at least "
             "one replica is reachable."
-        ] if info.missing_servers.length == 0
+        ] if not info.status.ready_for_outdated_reads
+        h "p", [
+           "It's possible this table is in the middle of reconfiguring, in which "
+           "case this issue is temporary."
+        ] if not info.status.all_replicas_ready and info.missing_servers.length == 0
     ]
 
 render_name_collision = (collision_type, issue, thisArg) ->
